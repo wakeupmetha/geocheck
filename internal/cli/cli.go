@@ -383,7 +383,8 @@ func run(ctx context.Context, o *options) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			accesses = access.Run(ctx, stack, families[0], access.Checks(), 6)
+			accesses = access.Run(ctx, stack, families[0],
+				env.PublicIP(families[0]), access.Checks(), 6)
 		}()
 	}
 

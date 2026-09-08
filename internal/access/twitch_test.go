@@ -2,6 +2,7 @@ package access
 
 import (
 	"errors"
+	"net/netip"
 	"strings"
 	"testing"
 )
@@ -19,7 +20,7 @@ func gqlReply(t *testing.T, payload string) string {
 // servedPayload is the shape of a token granted normally, trimmed to the fields
 // the check reads.
 const servedPayload = `{"authorization":{"forbidden":false,"reason":""},` +
-	`"ci_gb":false,"geoblock_reason":"","channel":"twitch"}`
+	`"ci_gb":false,"geoblock_reason":"","user_ip":"203.0.113.7","channel":"twitch"}`
 
 // proxyReason is the sentence the player shows when Twitch decides the address
 // is a proxy. This is the finding the check exists for.
@@ -105,7 +106,7 @@ func TestClassifyTwitchToken(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			res, value, sig := classifyTwitchToken(tc.status, tc.body)
+			res, _, value, sig := classifyTwitchToken(tc.status, tc.body)
 			if res.State != tc.want {
 				t.Fatalf("state = %v, want %v (detail %q)", res.State, tc.want, res.Detail)
 			}
@@ -135,18 +136,68 @@ func TestTwitchHostUp(t *testing.T) {
 	}
 }
 
+func TestTwitchSplitPath(t *testing.T) {
+	tok := func(ip string) twitchToken {
+		return twitchToken{UserIP: ip}
+	}
+	exit := netip.MustParseAddr("203.0.113.7")
+
+	if got := twitchSplitPath(tok("203.0.113.7"), exit); got != nil {
+		t.Errorf("one path should be no finding, got %q", got.Detail)
+	}
+	// The condition the error is made of: gql saw one address, the rest of the
+	// session leaves by another.
+	got := twitchSplitPath(tok("198.51.100.4"), exit)
+	if got == nil || got.State != StateRestricted {
+		t.Fatalf("a split path should be reported, got %v", got)
+	}
+	if !strings.Contains(got.Detail, "198.51.100.4") ||
+		!strings.Contains(got.Detail, "203.0.113.7") {
+		t.Errorf("detail %q should name both addresses", got.Detail)
+	}
+
+	// Nothing to compare is not a finding either way.
+	if twitchSplitPath(tok(""), exit) != nil {
+		t.Error("a token without an address should be no finding")
+	}
+	if twitchSplitPath(tok("203.0.113.7"), netip.Addr{}) != nil {
+		t.Error("an unknown exit address should be no finding")
+	}
+	if twitchSplitPath(tok("not an address"), exit) != nil {
+		t.Error("an unreadable address should be no finding")
+	}
+}
+
 func TestTwitchEndpointResult(t *testing.T) {
-	if got := twitchEndpointResult(12, nil); got.State != StateAvailable {
+	hosts := []twitchHost{
+		{Host: "gql.twitch.tv"},
+		{Host: "usher.ttvnw.net"},
+		{Host: "edge.ads.twitch.tv", Ads: true},
+	}
+
+	if got := twitchEndpointResult(hosts, []bool{false, false, false}); got.State != StateAvailable {
 		t.Errorf("all up = %v, want available", got.State)
 	}
-	got := twitchEndpointResult(12, []string{"usher.ttvnw.net"})
-	if got.State != StateRestricted {
-		t.Errorf("one down = %v, want restricted", got.State)
+
+	one := twitchEndpointResult(hosts, []bool{false, true, false})
+	if one.State != StateRestricted {
+		t.Errorf("one down = %v, want restricted", one.State)
 	}
-	if !strings.Contains(got.Detail, "usher.ttvnw.net") {
-		t.Errorf("detail %q should name the failing host", got.Detail)
+	if !strings.Contains(one.Detail, "usher.ttvnw.net") {
+		t.Errorf("detail %q should name the failing host", one.Detail)
 	}
-	all := twitchEndpointResult(2, []string{"a", "b"})
+
+	// Losing only the ad endpoints is the unblocker-looking configuration, and
+	// has to read as that rather than as a broken dependency.
+	adsOnly := twitchEndpointResult(hosts, []bool{false, false, true})
+	if adsOnly.State != StateRestricted {
+		t.Errorf("ads down = %v, want restricted", adsOnly.State)
+	}
+	if !strings.Contains(adsOnly.Detail, "unblocker") {
+		t.Errorf("detail %q should say what a blackholed ad host means", adsOnly.Detail)
+	}
+
+	all := twitchEndpointResult(hosts, []bool{true, true, true})
 	if all.State != StateBlocked {
 		t.Errorf("all down = %v, want blocked", all.State)
 	}

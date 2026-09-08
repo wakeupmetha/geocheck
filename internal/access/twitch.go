@@ -3,6 +3,7 @@ package access
 import (
 	"context"
 	"encoding/json"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -92,6 +93,10 @@ type twitchToken struct {
 	// to "wrong kind of address".
 	GeoblockReason string `json:"geoblock_reason"`
 	CIGB           bool   `json:"ci_gb"`
+	// UserIP is the address gql issued the token to. It is baked into the
+	// signed token and checked again when the manifest is fetched, which is
+	// what makes it worth reading: see twitchSplitPath.
+	UserIP string `json:"user_ip"`
 }
 
 // classifyTwitchToken turns one gql reply into a verdict. It is separate from
@@ -103,29 +108,33 @@ type twitchToken struct {
 //
 // A granted token is returned alongside the verdict so the caller can put the
 // same question to the manifest host, which checks the address again after gql
-// has already allowed it.
-func classifyTwitchToken(status int, body string) (res Result, value, sig string) {
+// has already allowed it, and can compare the address gql issued the token to
+// against the one the session actually exits from.
+func classifyTwitchToken(status int, body string) (res Result, tok twitchToken, value, sig string) {
+	fail := func(r Result) (Result, twitchToken, string, string) {
+		return r, twitchToken{}, "", ""
+	}
+
 	if hasTwitchProxyMarker(body) {
-		return Result{State: StateBlocked, Detail: twitchProxyDetail}, "", ""
+		return fail(Result{State: StateBlocked, Detail: twitchProxyDetail})
 	}
 	if status < 200 || status >= 300 {
-		return Result{State: StateError, Detail: "unexpected HTTP " + itoa(status)}, "", ""
+		return fail(Result{State: StateError, Detail: "unexpected HTTP " + itoa(status)})
 	}
 
 	var reply twitchGQLReply
 	if err := json.Unmarshal([]byte(body), &reply); err != nil {
-		return Result{State: StateError, Detail: "unreadable token response", Err: err}, "", ""
+		return fail(Result{State: StateError, Detail: "unreadable token response", Err: err})
 	}
 	if len(reply.Errors) > 0 {
-		return Result{State: StateError, Detail: "gql error: " + reply.Errors[0].Message}, "", ""
+		return fail(Result{State: StateError, Detail: "gql error: " + reply.Errors[0].Message})
 	}
 	if reply.Data.Token == nil {
-		return Result{State: StateError, Detail: "no playback token was issued"}, "", ""
+		return fail(Result{State: StateError, Detail: "no playback token was issued"})
 	}
 
-	var tok twitchToken
 	if err := json.Unmarshal([]byte(reply.Data.Token.Value), &tok); err != nil {
-		return Result{State: StateError, Detail: "unreadable token payload", Err: err}, "", ""
+		return fail(Result{State: StateError, Detail: "unreadable token payload", Err: err})
 	}
 
 	switch {
@@ -134,16 +143,47 @@ func classifyTwitchToken(status int, body string) (res Result, value, sig string
 		if detail == "" {
 			detail = "playback forbidden"
 		}
-		return Result{State: StateBlocked, Detail: detail}, "", ""
+		return fail(Result{State: StateBlocked, Detail: detail})
 	case tok.CIGB || tok.GeoblockReason != "":
 		detail := "geoblocked"
 		if tok.GeoblockReason != "" {
 			detail = "geoblocked: " + tok.GeoblockReason
 		}
-		return Result{State: StateBlocked, Detail: detail}, "", ""
+		return fail(Result{State: StateBlocked, Detail: detail})
 	}
 
-	return Result{State: StateAvailable}, reply.Data.Token.Value, reply.Data.Token.Signature
+	return Result{State: StateAvailable}, tok, reply.Data.Token.Value, reply.Data.Token.Signature
+}
+
+// twitchSplitPath compares the address Twitch issued the token to against the
+// address this session exits from, and reports the disagreement.
+//
+// The comparison is the useful one because Twitch binds the token to the
+// address that asked for it and checks it again when the manifest is fetched.
+// A routing rule that sends gql one way and the rest of the session another —
+// the shape every published workaround for this error has in common, whether it
+// routes Twitch direct and the manifest host through a tunnel or the reverse —
+// makes those two addresses differ, and the refusal that follows is worded as a
+// proxy detection.
+//
+// So this is reported before Twitch has refused anything: the configuration
+// that produces the error is visible in the token itself, and saying so is more
+// use than waiting for the error to appear.
+func twitchSplitPath(tok twitchToken, public netip.Addr) *Result {
+	if tok.UserIP == "" || !public.IsValid() {
+		return nil
+	}
+	seen, err := netip.ParseAddr(tok.UserIP)
+	if err != nil {
+		return nil
+	}
+	if seen.Unmap() == public.Unmap() {
+		return nil
+	}
+	return &Result{
+		State:  StateRestricted,
+		Detail: "token issued to " + seen.String() + ", session exits " + public.String(),
+	}
 }
 
 func twitchAccess() Check {
@@ -170,12 +210,17 @@ func twitchAccess() Check {
 				return Result{State: StateError, Detail: "request failed", Err: err}
 			}
 
-			res, value, sig := classifyTwitchToken(resp.Status, resp.Text())
+			res, tok, value, sig := classifyTwitchToken(resp.Status, resp.Text())
 			if value == "" {
 				return res
 			}
+			// An outright refusal from the manifest host is hard evidence and
+			// outranks the configuration warning below.
 			if manifest := twitchManifest(ctx, env, value, sig); manifest != nil {
 				return *manifest
+			}
+			if split := twitchSplitPath(tok, env.PublicIP); split != nil {
+				return *split
 			}
 			return res
 		},
@@ -208,23 +253,42 @@ func twitchManifest(ctx context.Context, env Env, value, sig string) *Result {
 	return nil
 }
 
-// twitchHosts are the origins one Twitch session actually depends on. They are
-// listed separately because they fail separately: filtering usually lands on
-// one of them — most often the manifest host — while the rest stay up, so the
-// site loads and only playback breaks.
-var twitchHosts = []string{
-	"www.twitch.tv",
-	"m.twitch.tv",
-	"gql.twitch.tv",
-	"api.twitch.tv",
-	"id.twitch.tv",
-	"passport.twitch.tv",
-	"player.twitch.tv",
-	"clips.twitch.tv",
-	"assets.twitch.tv",
-	"static-cdn.jtvnw.net",
-	"usher.ttvnw.net",
-	"vod-secure.twitch.tv",
+// twitchHost is one origin a Twitch session depends on. They are listed
+// individually because they fail individually: filtering usually lands on one
+// of them — most often the manifest host — while the rest stay up, so the site
+// loads and only playback breaks.
+type twitchHost struct {
+	Host string
+	// Ads marks the ad and telemetry endpoints. These fail for a different
+	// reason from the rest and mean something different when they do: nothing
+	// stops working, but a client that cannot reach them is a client that
+	// looks like it is suppressing ads, which is the other half of what Twitch
+	// calls an unblocker. Blackholing them — via an ad-blocking rule, or by
+	// routing an ads list to a reject outbound — is the second published cause
+	// of this error, and unlike a broken dependency it leaves the session
+	// working right up until playback is refused.
+	Ads bool
+}
+
+var twitchHosts = []twitchHost{
+	{Host: "www.twitch.tv"},
+	{Host: "m.twitch.tv"},
+	{Host: "gql.twitch.tv"},
+	{Host: "api.twitch.tv"},
+	{Host: "id.twitch.tv"},
+	{Host: "passport.twitch.tv"},
+	{Host: "player.twitch.tv"},
+	{Host: "clips.twitch.tv"},
+	{Host: "assets.twitch.tv"},
+	{Host: "static-cdn.jtvnw.net"},
+	{Host: "static.twitchcdn.net"},
+	{Host: "extension-files.twitch.tv"},
+	{Host: "pubsub-edge.twitch.tv"},
+	{Host: "irc-ws.chat.twitch.tv"},
+	{Host: "usher.ttvnw.net"},
+	{Host: "vod-secure.twitch.tv"},
+	{Host: "edge.ads.twitch.tv", Ads: true},
+	{Host: "spade.twitch.tv", Ads: true},
 }
 
 // twitchHostUp reports whether a host answered at all. The status is not read
@@ -239,14 +303,14 @@ func twitchEndpoints() Check {
 	return Check{
 		ID: "twitch_endpoints", Name: "Twitch endpoints",
 		Run: func(ctx context.Context, env Env) Result {
-			down := make([]string, len(twitchHosts))
+			down := make([]bool, len(twitchHosts))
 			var wg sync.WaitGroup
-			for i, host := range twitchHosts {
+			for i, h := range twitchHosts {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
 					resp, err := env.Stack.Do(ctx, env.Family, netx.Request{
-						URL:       "https://" + host + "/",
+						URL:       "https://" + h.Host + "/",
 						UserAgent: browserUA,
 						HeadOnly:  true,
 					})
@@ -254,33 +318,48 @@ func twitchEndpoints() Check {
 					if resp != nil {
 						status = resp.Status
 					}
-					if !twitchHostUp(status, err) {
-						down[i] = host
-					}
+					down[i] = !twitchHostUp(status, err)
 				}()
 			}
 			wg.Wait()
 
-			failed := make([]string, 0, len(down))
-			for _, h := range down {
-				if h != "" {
-					failed = append(failed, h)
-				}
-			}
-			return twitchEndpointResult(len(twitchHosts), failed)
+			return twitchEndpointResult(twitchHosts, down)
 		},
 	}
 }
 
-func twitchEndpointResult(total int, failed []string) Result {
+// twitchEndpointResult reads the sweep. The ad endpoints are separated out
+// because losing only those is a different finding from losing a dependency:
+// everything still works, and the report would otherwise say "restricted" over
+// two hosts nothing visibly needs, when what it has actually found is the
+// configuration that gets playback refused as an unblocker.
+func twitchEndpointResult(hosts []twitchHost, down []bool) Result {
+	failed := make([]string, 0, len(hosts))
+	ads := make([]string, 0, len(hosts))
+	for i, h := range hosts {
+		if !down[i] {
+			continue
+		}
+		if h.Ads {
+			ads = append(ads, h.Host)
+			continue
+		}
+		failed = append(failed, h.Host)
+	}
+
 	switch {
-	case len(failed) == 0:
+	case len(failed) == 0 && len(ads) == 0:
 		return Result{
 			State:  StateAvailable,
-			Detail: itoa(total) + "/" + itoa(total) + " hosts reachable",
+			Detail: itoa(len(hosts)) + "/" + itoa(len(hosts)) + " hosts reachable",
 		}
-	case len(failed) == total:
+	case len(failed)+len(ads) == len(hosts):
 		return Result{State: StateBlocked, Detail: "no Twitch host answered"}
+	case len(failed) == 0:
+		return Result{
+			State:  StateRestricted,
+			Detail: "ads blackholed, reads as an unblocker: " + strings.Join(ads, ", "),
+		}
 	}
 	return Result{
 		State:  StateRestricted,

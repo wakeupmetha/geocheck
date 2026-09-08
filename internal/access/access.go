@@ -17,6 +17,7 @@ package access
 
 import (
 	"context"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -62,6 +63,12 @@ type Check struct {
 type Env struct {
 	Stack  *netx.Stack
 	Family netx.Family
+	// PublicIP is the address this session exits from, as the identity
+	// services see it. A check that can also learn which address the service
+	// thinks it is talking to can compare the two, and a disagreement is a
+	// finding in its own right: it means the session is leaving by more than
+	// one path.
+	PublicIP netip.Addr
 }
 
 // Result is one check's outcome.
@@ -78,7 +85,7 @@ type Result struct {
 }
 
 // Run executes every check concurrently.
-func Run(ctx context.Context, stack *netx.Stack, f netx.Family, checks []Check, concurrency int) []Result {
+func Run(ctx context.Context, stack *netx.Stack, f netx.Family, public netip.Addr, checks []Check, concurrency int) []Result {
 	if concurrency <= 0 {
 		concurrency = 6
 	}
@@ -100,7 +107,7 @@ func Run(ctx context.Context, stack *netx.Stack, f netx.Family, checks []Check, 
 			defer func() { <-sem }()
 
 			start := time.Now()
-			res := c.Run(ctx, Env{Stack: stack, Family: f})
+			res := c.Run(ctx, Env{Stack: stack, Family: f, PublicIP: public})
 			res.Check = c
 			if res.RTT == 0 {
 				res.RTT = time.Since(start)
