@@ -61,8 +61,21 @@ func TestClassifyTwitchToken(t *testing.T) {
 			wantDetail: twitchProxyDetail,
 		},
 		{
-			// A geographic block is a different finding and must not be
-			// reported as a proxy detection.
+			// Seen in the field from a Russian VPS watching a channel that is
+			// only served in Russia: the country was right and Twitch still
+			// refused, because the address is hosting space. Calling this a
+			// geoblock would send someone off to change a country that was
+			// never the problem.
+			name:   "anonymizer_blocked is the proxy detection, not a geoblock",
+			status: 200,
+			body: gqlReply(t, `{"authorization":{"forbidden":false,"reason":""},`+
+				`"ci_gb":true,"geoblock_reason":"anonymizer_blocked"}`),
+			want:       StateBlocked,
+			wantDetail: twitchProxyDetail,
+		},
+		{
+			// A genuinely geographic block is a different finding and must not
+			// be reported as a proxy detection.
 			name:   "a geoblock is not a proxy detection",
 			status: 200,
 			body: gqlReply(t, `{"authorization":{"forbidden":false,"reason":""},`+

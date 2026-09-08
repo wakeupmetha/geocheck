@@ -61,6 +61,19 @@ var twitchProxyMarkers = []string{
 
 const twitchProxyDetail = "proxy or unblocker detected (Error #3)"
 
+// twitchAnonymizerReason reports whether a geoblock_reason is about the kind of
+// address rather than where it is.
+//
+// The field name invites the wrong reading. "anonymizer_blocked" arrives in it,
+// and it is not a country verdict at all: it is Twitch saying the address looks
+// like hosting or proxy space, which is the same finding the player renders as
+// the proxy sentence. Reporting it as a geoblock would be actively misleading —
+// it sends someone off to change their exit country when the country was never
+// the problem, and a correct country is exactly when this turns up.
+func twitchAnonymizerReason(reason string) bool {
+	return strings.Contains(strings.ToLower(reason), "anonymizer")
+}
+
 func hasTwitchProxyMarker(body string) bool {
 	lower := strings.ToLower(body)
 	for _, m := range twitchProxyMarkers {
@@ -90,8 +103,9 @@ type twitchToken struct {
 		Forbidden bool   `json:"forbidden"`
 		Reason    string `json:"reason"`
 	} `json:"authorization"`
-	// GeoblockReason and CIGB are how Twitch says "wrong country", as opposed
-	// to "wrong kind of address".
+	// GeoblockReason and CIGB carry the refusals Twitch decides before it
+	// looks at entitlements. The name is misleading: not every value is
+	// geographic — see twitchAnonymizerReason.
 	GeoblockReason string `json:"geoblock_reason"`
 	CIGB           bool   `json:"ci_gb"`
 	// UserIP is the address gql issued the token to. It is baked into the
@@ -145,6 +159,10 @@ func classifyTwitchToken(status int, body string) (res Result, tok twitchToken, 
 			detail = "playback forbidden"
 		}
 		return fail(Result{State: StateBlocked, Detail: detail})
+	case twitchAnonymizerReason(tok.GeoblockReason):
+		// Same finding as the sentence above, reported in the same words: this
+		// is the machine-readable form of the message the player shows.
+		return fail(Result{State: StateBlocked, Detail: twitchProxyDetail})
 	case tok.CIGB || tok.GeoblockReason != "":
 		detail := "geoblocked"
 		if tok.GeoblockReason != "" {
