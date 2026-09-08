@@ -202,3 +202,35 @@ func TestTwitchEndpointResult(t *testing.T) {
 		t.Errorf("all down = %v, want blocked", all.State)
 	}
 }
+
+func TestTwitchChannel(t *testing.T) {
+	// What people actually paste: the name, or the address bar.
+	ok := map[string]string{
+		"lagoda1337":                         "lagoda1337",
+		"LaGoda1337":                         "lagoda1337",
+		"  lagoda1337  ":                     "lagoda1337",
+		"twitch.tv/lagoda1337":               "lagoda1337",
+		"https://www.twitch.tv/lagoda1337":   "lagoda1337",
+		"https://www.twitch.tv/lagoda1337/":  "lagoda1337",
+		"https://m.twitch.tv/lagoda1337/vod": "lagoda1337",
+		"https://www.twitch.tv/lagoda1337?tt_content=x": "lagoda1337",
+	}
+	for in, want := range ok {
+		got, valid := TwitchChannel(in)
+		if !valid || got != want {
+			t.Errorf("TwitchChannel(%q) = %q, %v; want %q, true", in, got, valid, want)
+		}
+	}
+
+	// Nothing that would send a nonsense login to Twitch and come back looking
+	// like a network finding.
+	for _, in := range []string{
+		"", "   ", "abc", "https://www.twitch.tv/", "twitch.tv/",
+		"has-a-dash", "way_too_long_a_channel_name_here",
+		"https://example.com/lagoda1337",
+	} {
+		if got, valid := TwitchChannel(in); valid {
+			t.Errorf("TwitchChannel(%q) = %q, true; want it rejected", in, got)
+		}
+	}
+}

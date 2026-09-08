@@ -45,6 +45,7 @@ type options struct {
 	noAI     bool
 	noRep    bool
 	repKey   string
+	twitchCh string
 	portals  string
 	targets  string
 	detail   bool
@@ -134,6 +135,7 @@ func parse(args []string) (*options, error) {
 	bind(&o.noAI, false, "skip the AI endpoint reachability checks", "no-ai")
 	bind(&o.noRep, false, "skip the proxycheck.io address reputation lookup", "no-reputation")
 	bindStr(&o.repKey, os.Getenv("PROXYCHECK_API_KEY"), "proxycheck.io API key (raises the daily allowance to 1000)", "proxycheck-key")
+	bindStr(&o.twitchCh, os.Getenv("GEOCHECK_TWITCH_CHANNEL"), "also test one Twitch channel's playback: a name or a channel URL", "twitch-channel")
 	bindStr(&o.portals, "default", "connectivity-check set: a tag, an id, or 'all'", "portal")
 	bindStr(&o.targets, "default", "MTR target set: a tag, an id, 'all', or a comma-separated list", "T", "targets")
 	bind(&o.detail, false, "print the full per-hop table for every target", "d", "detail")
@@ -157,6 +159,17 @@ func parse(args []string) (*options, error) {
 	}
 	if o.timeout <= 0 {
 		return nil, errors.New("timeout must be positive")
+	}
+	if o.twitchCh != "" {
+		// Rejected here rather than at request time: a typo would otherwise
+		// come back as an ordinary "no such channel" much later in the run,
+		// looking like a finding about the network.
+		login, ok := access.TwitchChannel(o.twitchCh)
+		if !ok {
+			return nil, fmt.Errorf(
+				"--twitch-channel: %q is not a channel name or a twitch.tv URL", o.twitchCh)
+		}
+		o.twitchCh = login
 	}
 	if o.jsonOut && o.svgOut == "-" {
 		return nil, errors.New(
@@ -197,6 +210,10 @@ Options:
       --no-ai             skip the AI endpoint reachability checks
       --no-reputation     skip the proxycheck.io address reputation lookup
       --proxycheck-key K  proxycheck.io API key ($PROXYCHECK_API_KEY)
+      --twitch-channel C  also test one Twitch channel's playback, by name or
+                          URL ($GEOCHECK_TWITCH_CHANNEL). Premium refusals
+                          depend on what a channel carries, so the fixed
+                          checks can pass while a given channel is refused
       --no-rdns           skip reverse DNS for hops
       --mask              mask the public address in the output
   -j, --json              emit JSON
@@ -384,7 +401,7 @@ func run(ctx context.Context, o *options) error {
 		go func() {
 			defer wg.Done()
 			accesses = access.Run(ctx, stack, families[0],
-				env.PublicIP(families[0]), access.Checks(), 6)
+				env.PublicIP(families[0]), access.Checks(o.twitchCh), 6)
 		}()
 	}
 

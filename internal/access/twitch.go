@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -186,12 +187,26 @@ func twitchSplitPath(tok twitchToken, public netip.Addr) *Result {
 	}
 }
 
+// twitchAccess probes the default channel, which answers the general question:
+// will Twitch issue this address a token at all.
 func twitchAccess() Check {
+	return twitchAccessFor(twitchChannel, "twitch_access", "Twitch")
+}
+
+// twitchAccessFor probes one named channel.
+//
+// A separate channel is worth probing because the premium refusal is a
+// property of the content, not of the account: a channel with no restricted
+// content is served to addresses that a restricted one would refuse, so the
+// default channel can come back clean while the channel someone actually wants
+// to watch does not. Pointing this at that channel is the only way to ask the
+// question that matters to them.
+func twitchAccessFor(channel, id, name string) Check {
 	return Check{
-		ID: "twitch_access", Name: "Twitch",
+		ID: id, Name: name,
 		Run: func(ctx context.Context, env Env) Result {
 			query := `{"operationName":"PlaybackAccessToken","variables":` +
-				`{"isLive":true,"login":"` + twitchChannel + `","isVod":false,` +
+				`{"isLive":true,"login":"` + channel + `","isVod":false,` +
 				`"vodID":"","playerType":"site"},"extensions":{"persistedQuery":` +
 				`{"version":1,"sha256Hash":"` + twitchPlaybackHash + `"}}}`
 
@@ -216,7 +231,7 @@ func twitchAccess() Check {
 			}
 			// An outright refusal from the manifest host is hard evidence and
 			// outranks the configuration warning below.
-			if manifest := twitchManifest(ctx, env, value, sig); manifest != nil {
+			if manifest := twitchManifest(ctx, env, channel, value, sig); manifest != nil {
 				return *manifest
 			}
 			if split := twitchSplitPath(tok, env.PublicIP); split != nil {
@@ -233,7 +248,7 @@ func twitchAccess() Check {
 // A token is not on its own enough to reach a manifest — the channel also has
 // to be live — so anything short of an outright refusal is not evidence either
 // way, and is deliberately left unreported rather than turned into a verdict.
-func twitchManifest(ctx context.Context, env Env, value, sig string) *Result {
+func twitchManifest(ctx context.Context, env Env, channel, value, sig string) *Result {
 	q := url.Values{
 		"allow_source": {"true"},
 		"fast_bread":   {"true"},
@@ -241,7 +256,7 @@ func twitchManifest(ctx context.Context, env Env, value, sig string) *Result {
 		"sig":          {sig},
 	}
 	resp, err := env.Stack.Do(ctx, env.Family, netx.Request{
-		URL:       twitchUsher + twitchChannel + ".m3u8?" + q.Encode(),
+		URL:       twitchUsher + channel + ".m3u8?" + q.Encode(),
 		UserAgent: browserUA,
 	})
 	if err != nil {
@@ -365,4 +380,37 @@ func twitchEndpointResult(hosts []twitchHost, down []bool) Result {
 		State:  StateRestricted,
 		Detail: itoa(len(failed)) + " unreachable: " + strings.Join(failed, ", "),
 	}
+}
+
+// reTwitchLogin is Twitch's own rule for a channel name: letters, digits and
+// underscores, 4 to 25 of them.
+var reTwitchLogin = regexp.MustCompile(`^[A-Za-z0-9_]{4,25}$`)
+
+// TwitchChannel reads a channel login out of whatever the user pasted, which
+// in practice is either the name or the address bar. It returns the login in
+// the lower case Twitch uses, and false if the input names no channel.
+//
+// Accepting the URL matters more than it looks: the channel someone wants
+// tested is the one they are looking at, and asking them to retype the last
+// path segment of it is the kind of small refusal that gets a flag left unused.
+func TwitchChannel(raw string) (string, bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", false
+	}
+
+	// Tolerate a full URL, a scheme-less one, and any trailing path or query
+	// Twitch hangs off a channel page.
+	if i := strings.Index(s, "twitch.tv/"); i >= 0 {
+		s = s[i+len("twitch.tv/"):]
+	}
+	s = strings.TrimPrefix(s, "/")
+	if i := strings.IndexAny(s, "/?#"); i >= 0 {
+		s = s[:i]
+	}
+
+	if !reTwitchLogin.MatchString(s) {
+		return "", false
+	}
+	return strings.ToLower(s), true
 }

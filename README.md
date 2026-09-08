@@ -19,6 +19,13 @@ curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/g
 > #3)"* — and names the split routing that causes it, and one that sweeps the
 > subdomains a Twitch session depends on. Everything else is upstream's.
 > No merge back is intended.
+>
+> Premium refusals depend on what a channel carries, so name the channel you
+> actually want tested:
+>
+> ```sh
+> curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/geocheck.sh | sh -s -- --twitch-channel https://www.twitch.tv/lagoda1337
+> ```
 
 
 <img src="https://raw.githubusercontent.com/wakeupmetha/geocheck/main/docs/img/demo.gif" alt="geocheck reporting an address: its reputation, what forty services think its country is, the operating-system connectivity checks, and which services will serve it" width="920">
@@ -245,6 +252,8 @@ geocheck [options]
       --no-access         skip the service-availability checks
       --no-reputation     skip the address reputation lookup
       --proxycheck-key K  proxycheck.io API key ($PROXYCHECK_API_KEY)
+      --twitch-channel C  also test one Twitch channel's playback, by name or
+                          URL ($GEOCHECK_TWITCH_CHANNEL)
       --mask              mask the public address in the output
   -j, --json              emit JSON
       --svg FILE          write the report as a self-contained SVG (- for stdout)
