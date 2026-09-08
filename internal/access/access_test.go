@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -145,7 +146,8 @@ func TestRunSetsCheckAndTiming(t *testing.T) {
 		time.Sleep(time.Millisecond)
 		return Result{State: StateAvailable}
 	}}
-	got := Run(context.Background(), testEnv(t).Stack, netx.V4, []Check{probe}, 1)
+	got := Run(context.Background(), testEnv(t).Stack, netx.V4,
+		netip.MustParseAddr("203.0.113.7"), []Check{probe}, 1)
 	if len(got) != 1 {
 		t.Fatalf("got %d results, want 1", len(got))
 	}
