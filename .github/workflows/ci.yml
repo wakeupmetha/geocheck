@@ -222,10 +222,10 @@ jobs:
 
           # Removal must name the exact tag; `rmi` on a bare repository or a
           # broad prune would take images that are not ours.
-          grep -qx "rmi remnawave/geocheck:ing" "$dir/log" || true
+          grep -qx "rmi ghcr.io/wakeupmetha/geocheck:ing" "$dir/log" || true
           : > "$dir/log"; rm -f "$dir/present"
           env PATH="$dir/bin" /bin/sh scripts/geocheck.sh >/dev/null 2>&1 || true
-          grep -qx "rmi remnawave/geocheck:ing" "$dir/log" || {
+          grep -qx "rmi ghcr.io/wakeupmetha/geocheck:ing" "$dir/log" || {
             echo "rmi must name the exact image tag; log was:"; cat "$dir/log"; exit 1
           }
           echo "  removal targets the exact tag"
@@ -265,8 +265,8 @@ jobs:
           rm "$dir/bin/podman"
           expect "a missing forced runtime errors" "podman is not installed" "" --runtime podman
 
-          expect "geocheck flags pass through" "remnawave/geocheck:ing --json --no-geo" "" --json --no-geo
-          expect "launcher options are stripped" "remnawave/geocheck:ing -4" "" --runtime docker -4
+          expect "geocheck flags pass through" "ghcr.io/wakeupmetha/geocheck:ing --json --no-geo" "" --json --no-geo
+          expect "launcher options are stripped" "ghcr.io/wakeupmetha/geocheck:ing -4" "" --runtime docker -4
 
       - name: The launcher must not defer to an installed geocheck
         run: |

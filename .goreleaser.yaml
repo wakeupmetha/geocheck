@@ -47,7 +47,7 @@ changelog:
   sort: asc
   use: github
 
-  format: "[`{{ slice .SHA 0 7 }}`](https://github.com/remnawave/geocheck/commit/{{ .SHA }}) {{ .Message }}{{ with .Logins }} – {{ . | englishJoin }}{{ end }}"
+  format: "[`{{ slice .SHA 0 7 }}`](https://github.com/wakeupmetha/geocheck/commit/{{ .SHA }}) {{ .Message }}{{ with .Logins }} – {{ . | englishJoin }}{{ end }}"
 
   groups:
     - title: Features
@@ -75,9 +75,9 @@ release:
     **One command, nothing installed:**
 
     ```sh
-    curl -fsSL https://geocheck.ing | sh
-    curl -fsSL https://geocheck.ing | sh -s -- -4 --detail       # with flags
-    curl -fsSL https://geocheck.ing | sh -s -- --runtime binary  # pin the runtime
+    curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/geocheck.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/geocheck.sh | sh -s -- -4 --detail       # with flags
+    curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/geocheck.sh | sh -s -- --runtime binary  # pin the runtime
     ```
 
     The launcher uses docker, else podman, else it downloads the binary below –
@@ -87,10 +87,10 @@ release:
     already had is left alone. Set `GEOCHECK_KEEP_IMAGE=1` to keep the pulled
     image so later runs start instantly.
 
-    **Straight from Docker Hub:**
+    **Straight from the registry:**
 
     ```sh
-    docker pull remnawave/geocheck:ing && docker run --rm -it --network host remnawave/geocheck:ing
+    docker pull ghcr.io/wakeupmetha/geocheck:ing && docker run --rm -it --network host ghcr.io/wakeupmetha/geocheck:ing
     ```
 
     Under podman add `--cap-add=NET_RAW`: docker grants that capability by
@@ -98,10 +98,12 @@ release:
     latency only.
 
     **As a binary** – download the archive for your platform from the assets
-    below, or build it:
+    below, or build it from a checkout. `go install` is not offered: this is a
+    fork, and the module is still named after upstream, so installing by module
+    path would fetch upstream's build without the Twitch checks.
 
     ```sh
-    go install github.com/remnawave/geocheck/cmd/geocheck@{{ .Tag }}
+    git clone https://github.com/wakeupmetha/geocheck && cd geocheck && make build
     ```
 
     Hop-by-hop tracing needs a raw socket. The container image already carries

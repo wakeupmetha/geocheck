@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-IMAGE="${GEOCHECK_IMAGE:-remnawave/geocheck:ing}"
-REPO="${GEOCHECK_REPO:-remnawave/geocheck}"
+IMAGE="${GEOCHECK_IMAGE:-ghcr.io/wakeupmetha/geocheck:ing}"
+REPO="${GEOCHECK_REPO:-wakeupmetha/geocheck}"
 RUNTIME="${GEOCHECK_RUNTIME:-auto}"
 
 say() { printf '%s\n' "$*" >&2; }
@@ -46,7 +46,18 @@ run_container() {
     pulled=0
     if ! "$engine" image inspect "$IMAGE" >/dev/null 2>&1; then
         say "→ pulling $IMAGE"
-        "$engine" pull "$IMAGE" >&2 || die "could not pull $IMAGE"
+        if ! "$engine" pull "$IMAGE" >&2; then
+            # Asked for this runtime specifically, so there is nowhere to fall
+            # back to and saying so is the only useful thing left.
+            [ "$RUNTIME" = auto ] || die "could not pull $IMAGE"
+            # In auto mode there is: the release binary below is the same
+            # build. This matters because a package can be unreachable for
+            # reasons that have nothing to do with the user - not yet
+            # published, or not public - and refusing to run at all would be a
+            # poor answer to "the image is missing".
+            say "→ could not pull $IMAGE; falling back to the release binary"
+            return 1
+        fi
         pulled=1
     fi
 
@@ -156,8 +167,8 @@ usage() {
     cat >&2 <<'USAGE'
 geocheck launcher
 
-  curl -fsSL https://geocheck.ing | sh
-  curl -fsSL https://geocheck.ing | sh -s -- [launcher options] [geocheck options]
+  curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/geocheck.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/geocheck.sh | sh -s -- [launcher options] [geocheck options]
 
 Launcher options, which must come first and are not passed on:
   --runtime auto      docker, else podman, else the release binary (default)
@@ -168,7 +179,7 @@ Launcher options, which must come first and are not passed on:
 
 Environment:
   GEOCHECK_RUNTIME    same as --runtime
-  GEOCHECK_IMAGE      image to run (default remnawave/geocheck:ing)
+  GEOCHECK_IMAGE      image to run (default ghcr.io/wakeupmetha/geocheck:ing)
   GEOCHECK_REPO       GitHub repository to download releases from
   GEOCHECK_KEEP_IMAGE keep an image this run pulled instead of removing it
 
@@ -229,7 +240,11 @@ main() {
 
     for candidate in docker podman; do
         if have "$candidate"; then
-            run_container "$candidate" "$@"
+            # This returns only when the image could not be pulled; on every
+            # other path it runs geocheck and exits. A second runtime would
+            # reach the same registry and fail the same way, so give up on
+            # containers here rather than trying podman next.
+            run_container "$candidate" "$@" || break
         fi
     done
 

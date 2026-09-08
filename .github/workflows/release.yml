@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: remnawave/geocheck
+  IMAGE: ghcr.io/wakeupmetha/geocheck
 
 jobs:
   binaries:
@@ -39,19 +39,25 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   docker:
-    name: Docker Hub image
+    name: Container image
     runs-on: ubuntu-latest
+    # GHCR takes the token this workflow already has, so a fork can publish
+    # images without anyone configuring a registry secret first.
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v7
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Derive image tags
         id: tags
@@ -93,25 +99,3 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
-
-      - name: Update the Docker Hub description
-        id: description
-        uses: peter-evans/dockerhub-description@v4
-        continue-on-error: true
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ env.IMAGE }}
-          readme-filepath: ./docs/dockerhub.md
-          short-description: "Where the internet thinks you are, and how directly you reach it"
-
-      - name: Report a description that did not update
-        if: steps.description.outcome == 'failure'
-        run: |
-          echo "::warning title=Docker Hub description not updated::\
-          The image pushed, but the repository description was left as it was. \
-          DOCKERHUB_TOKEN needs Read, Write, Delete scope - Read & Write pushes \
-          images but cannot rewrite the description - and the account needs Admin \
-          on ${IMAGE}, which belongs to an organisation."
-        env:
-          IMAGE: ${{ env.IMAGE }}

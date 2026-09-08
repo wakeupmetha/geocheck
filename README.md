@@ -4,18 +4,24 @@
 
 **Where the internet thinks you are – and how directly you actually reach it.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/remnawave/geocheck/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI)](https://github.com/remnawave/geocheck/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/remnawave/geocheck?style=for-the-badge&logo=github&logoColor=white&color=7b3fe4)](https://github.com/remnawave/geocheck/releases/latest)
-[![Docker pulls](https://img.shields.io/docker/pulls/remnawave/geocheck?style=for-the-badge&logo=docker&logoColor=white&color=2496ed)](https://hub.docker.com/r/remnawave/geocheck)
-[![Image size](https://img.shields.io/docker/image-size/remnawave/geocheck/ing?style=for-the-badge&logo=docker&logoColor=white&color=2496ed&label=image)](https://hub.docker.com/r/remnawave/geocheck/tags)
-[![Go](https://img.shields.io/github/go-mod/go-version/remnawave/geocheck?style=for-the-badge&logo=go&logoColor=white&color=00add8)](go.mod)
-[![License](https://img.shields.io/github/license/remnawave/geocheck?style=for-the-badge&color=5ee08a)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/wakeupmetha/geocheck/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI)](https://github.com/wakeupmetha/geocheck/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/wakeupmetha/geocheck?style=for-the-badge&logo=github&logoColor=white&color=7b3fe4)](https://github.com/wakeupmetha/geocheck/releases/latest)
+[![Go](https://img.shields.io/github/go-mod/go-version/wakeupmetha/geocheck?style=for-the-badge&logo=go&logoColor=white&color=00add8)](go.mod)
+[![License](https://img.shields.io/github/license/wakeupmetha/geocheck?style=for-the-badge&color=5ee08a)](LICENSE)
 
 ```sh
-curl -fsSL https://geocheck.ing | sh
+curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/geocheck.sh | sh
 ```
 
-<img src="https://raw.githubusercontent.com/remnawave/geocheck/main/docs/img/demo.gif" alt="geocheck reporting an address: its reputation, what forty services think its country is, the operating-system connectivity checks, and which services will serve it" width="920">
+> **This is a fork of [remnawave/geocheck](https://github.com/remnawave/geocheck).**
+> It adds two Twitch checks: one that reads Twitch's own refusal out of the
+> playback token — including *"A proxy or unblocker has been detected … (Error
+> #3)"* — and names the split routing that causes it, and one that sweeps the
+> subdomains a Twitch session depends on. Everything else is upstream's.
+> No merge back is intended.
+
+
+<img src="https://raw.githubusercontent.com/wakeupmetha/geocheck/main/docs/img/demo.gif" alt="geocheck reporting an address: its reputation, what forty services think its country is, the operating-system connectivity checks, and which services will serve it" width="920">
 
 <sub>Recorded from <code>geocheck --demo</code>, which renders invented measurements in reserved
 documentation address space – so this animation publishes nobody's real address or route. The
@@ -41,10 +47,10 @@ its checksum – then removes whatever it pulled or downloaded when the run ends
 An image you already had is left untouched.
 
 ```sh
-curl -fsSL https://geocheck.ing | sh
+curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/geocheck.sh | sh
 
 # Flags go after -s --
-curl -fsSL https://geocheck.ing | sh -s -- -4 --detail
+curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/geocheck.sh | sh -s -- -4 --detail
 ```
 
 To pin the runtime instead of letting it choose, name one. It is then a
@@ -52,12 +58,12 @@ requirement rather than a preference: if it is missing the launcher says so
 instead of quietly falling through to the next one.
 
 ```sh
-curl -fsSL https://geocheck.ing | sh -s -- --runtime binary   # never a container
-curl -fsSL https://geocheck.ing | sh -s -- --runtime docker
-curl -fsSL https://geocheck.ing | sh -s -- --runtime podman
+curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/geocheck.sh | sh -s -- --runtime binary   # never a container
+curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/geocheck.sh | sh -s -- --runtime docker
+curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/geocheck.sh | sh -s -- --runtime podman
 
 # Or as an environment variable, which composes better with a wrapper script
-curl -fsSL https://geocheck.ing | GEOCHECK_RUNTIME=binary sh
+curl -fsSL https://raw.githubusercontent.com/wakeupmetha/geocheck/main/scripts/geocheck.sh | GEOCHECK_RUNTIME=binary sh
 ```
 
 Launcher options must come first and are not passed on; everything after them
@@ -66,14 +72,14 @@ goes to geocheck. `sh -s -- --launcher-help` lists them.
 Prefer to see the command you are running? Straight from Docker Hub:
 
 ```sh
-docker pull remnawave/geocheck:ing
-docker run --rm -it --network host remnawave/geocheck:ing
+docker pull ghcr.io/wakeupmetha/geocheck:ing
+docker run --rm -it --network host ghcr.io/wakeupmetha/geocheck:ing
 ```
 
 Or as a binary, with no container at all:
 
 ```sh
-go install github.com/remnawave/geocheck/cmd/geocheck@latest
+git clone https://github.com/wakeupmetha/geocheck && cd geocheck && make build
 ```
 
 ## What it measures
@@ -93,7 +99,7 @@ because those invalidate everything above them.
 ## The part other tools skip
 
 <div align="center">
-<img src="https://raw.githubusercontent.com/remnawave/geocheck/main/docs/img/connectivity.gif" alt="the path analysis: for every target a verdict, round-trip time, loss, hop count and the autonomous system the path ends in" width="920">
+<img src="https://raw.githubusercontent.com/wakeupmetha/geocheck/main/docs/img/connectivity.gif" alt="the path analysis: for every target a verdict, round-trip time, loss, hop count and the autonomous system the path ends in" width="920">
 </div>
 
 Latency alone cannot tell you whether a connection is direct – a well-peered DSL
@@ -120,22 +126,22 @@ set traces one per network — DC2 and DC5. Use `-T telegram` for all five.
 
 ```sh
 # Everything, both address families
-docker run --rm -it --network host remnawave/geocheck:ing
+docker run --rm -it --network host ghcr.io/wakeupmetha/geocheck:ing
 
 # IPv4 only, with every hop of every path
-docker run --rm -it --network host remnawave/geocheck:ing -4 -d
+docker run --rm -it --network host ghcr.io/wakeupmetha/geocheck:ing -4 -d
 
 # Machine-readable
-docker run --rm --network host remnawave/geocheck:ing --json > report.json
+docker run --rm --network host ghcr.io/wakeupmetha/geocheck:ing --json > report.json
 
 # Just "is my connection direct" – skip the geolocation half
-docker run --rm -it --network host remnawave/geocheck:ing --no-geo
+docker run --rm -it --network host ghcr.io/wakeupmetha/geocheck:ing --no-geo
 
 # Trace every target in the catalogue
-docker run --rm -it --network host remnawave/geocheck:ing -T all -d
+docker run --rm -it --network host ghcr.io/wakeupmetha/geocheck:ing -T all -d
 
 # See a sample report without measuring anything
-docker run --rm -it remnawave/geocheck:ing --demo
+docker run --rm -it ghcr.io/wakeupmetha/geocheck:ing --demo
 ```
 
 Use `-it` so colours and the progress line render; drop it when piping.
@@ -163,7 +169,7 @@ geocheck cannot open the raw socket the path trace needs – it still runs, but
 reports latency only, with no hops.
 
 ```sh
-podman run --rm -it --network host --cap-add=NET_RAW remnawave/geocheck:ing
+podman run --rm -it --network host --cap-add=NET_RAW ghcr.io/wakeupmetha/geocheck:ing
 ```
 
 The `geocheck.ing` launcher passes it for you.
@@ -179,7 +185,7 @@ On a host with several addresses, the one geocheck reports is whichever the
 kernel picks by default. To measure a specific one, name it:
 
 ```sh
-docker run --rm -it --network host remnawave/geocheck:ing -i 203.0.113.10
+docker run --rm -it --network host ghcr.io/wakeupmetha/geocheck:ing -i 203.0.113.10
 ```
 
 `-i` accepts an interface name **or** any address assigned to the host, so you
@@ -196,10 +202,10 @@ the host's addresses at all.
 <br>
 
 ```sh
-go install github.com/remnawave/geocheck/cmd/geocheck@latest
+git clone https://github.com/wakeupmetha/geocheck && cd geocheck && make build
 ```
 
-Or download one from the [releases page](https://github.com/remnawave/geocheck/releases).
+Or download one from the [releases page](https://github.com/wakeupmetha/geocheck/releases).
 
 Hop-by-hop tracing needs a raw ICMP socket. The container image already carries
 the capability, so `docker run` needs nothing beyond the flags above. For a
@@ -347,24 +353,24 @@ is a quick way to see the output before running a real check.
 
 ## Contributing
 
-See [DEVELOPMENT.md](https://github.com/remnawave/geocheck/blob/main/DEVELOPMENT.md)
+See [DEVELOPMENT.md](https://github.com/wakeupmetha/geocheck/blob/main/DEVELOPMENT.md)
 for the build, the repository layout, the release process and the known
 limitations.
 
 <div align="center">
-<a href="https://github.com/remnawave/geocheck/graphs/contributors">
-<img src="https://contrib.rocks/image?repo=remnawave/geocheck" alt="Contributors">
+<a href="https://github.com/wakeupmetha/geocheck/graphs/contributors">
+<img src="https://contrib.rocks/image?repo=wakeupmetha/geocheck" alt="Contributors">
 </a>
 </div>
 
 ## Star history
 
 <div align="center">
-<a href="https://star-history.com/#remnawave/geocheck&Date">
+<a href="https://star-history.com/#wakeupmetha/geocheck&Date">
 <picture>
-<source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=remnawave/geocheck&type=Date&theme=dark">
-<source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=remnawave/geocheck&type=Date">
-<img src="https://api.star-history.com/svg?repos=remnawave/geocheck&type=Date" alt="Star history chart" width="620">
+<source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=wakeupmetha/geocheck&type=Date&theme=dark">
+<source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=wakeupmetha/geocheck&type=Date">
+<img src="https://api.star-history.com/svg?repos=wakeupmetha/geocheck&type=Date" alt="Star history chart" width="620">
 </picture>
 </a>
 </div>
@@ -385,4 +391,4 @@ This project stands on work done by others:
 
 ## License
 
-MIT – see [LICENSE](https://github.com/remnawave/geocheck/blob/main/LICENSE).
+MIT – see [LICENSE](https://github.com/wakeupmetha/geocheck/blob/main/LICENSE).
