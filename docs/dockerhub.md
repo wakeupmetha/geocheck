@@ -74,7 +74,7 @@ Pre-releases are published under their exact version and never move `ing`.
 - **Path analysis** – the route to the major networks, every hop annotated with
   its autonomous system, and a verdict on how directly each is reached:
   `direct / on-net`, `regional`, `transit`, `detour` or `intercepted`.
-- **Service availability** – whether Netflix, ChatGPT, Gemini, NotebookLM,
+- **Service availability** – whether Netflix, ChatGPT, Gemini, NotebookLM, Twitch,
   YouTube Premium, Claude and TikTok will actually serve you.
 
 It also reports when the measurement itself is being tampered with – a tunnel

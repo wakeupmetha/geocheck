@@ -23,6 +23,8 @@ func Checks() []Check {
 		tiktok(),
 		gemini(),
 		notebookLM(),
+		twitchAccess(),
+		twitchEndpoints(),
 	}
 }
 

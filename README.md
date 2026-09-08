@@ -84,7 +84,7 @@ go install github.com/remnawave/geocheck/cmd/geocheck@latest
 | 🌍  | **Geolocation consensus** | Asks ~40 GeoIP APIs and consumer services which country they serve you, and shows exactly where they disagree.                                                                                               |
 | 📶  | **Connectivity checks**   | Runs the endpoints operating systems use to decide they are online – Google's `generate_204`, Apple's hotspot-detect, Microsoft's NCSI – and compares each answer against the response its vendor specifies. |
 | 🧭  | **Path analysis**         | Traces the route to the major networks, annotates every hop with its autonomous system, and judges how directly each one is reached.                                                                         |
-| 🎬  | **Service availability**  | Asks Netflix, ChatGPT, Gemini, NotebookLM, YouTube Premium, Claude and TikTok whether they will actually serve you.                                                                                                              |
+| 🎬  | **Service availability**  | Asks Netflix, ChatGPT, Gemini, NotebookLM, YouTube Premium, Claude, TikTok and Twitch whether they will actually serve you, and sweeps Twitch's subdomains for the ones a filter picks off one at a time.                                                                                                              |
 
 It also checks whether the measurement itself is being tampered with – a tunnel
 carrying your default route, a resolver answering on someone else's behalf –
