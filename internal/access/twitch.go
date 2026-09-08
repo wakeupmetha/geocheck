@@ -112,6 +112,65 @@ type twitchToken struct {
 	// signed token and checked again when the manifest is fetched, which is
 	// what makes it worth reading: see twitchSplitPath.
 	UserIP string `json:"user_ip"`
+	// MaxResolution and MaxResolutionReasons are the quality ceiling and, for
+	// each tier above it, why it is withheld. They are in the same token as
+	// the availability verdict, which is the whole reason to read them: the
+	// choice between routing Twitch through a tunnel and leaving it direct
+	// trades one against the other, and both sides can be measured at once.
+	MaxResolution        string              `json:"maximum_resolution"`
+	MaxResolutionReasons map[string][]string `json:"maximum_resolution_reasons"`
+}
+
+// twitchTiers is Twitch's quality ladder, lowest first. Only the tiers seen in
+// real tokens are named; anything else is reported as Twitch spells it rather
+// than guessed at.
+var twitchTiers = []struct{ Tier, Name string }{
+	{"FULL_HD", "1080p"},
+	{"QUAD_HD", "1440p"},
+	{"ULTRA_HD", "2160p"},
+}
+
+func twitchTierName(tier string) string {
+	for _, t := range twitchTiers {
+		if t.Tier == tier {
+			return t.Name
+		}
+	}
+	return tier
+}
+
+// twitchQuality describes the ceiling and the first tier above it that is
+// withheld, with the reason Twitch gives.
+//
+// The reason code is passed through verbatim. It is self-describing
+// (AUTHZ_NOT_LOGGED_IN), and inventing friendlier wording would mean guessing
+// at codes not yet seen — including whichever one a region cap uses, which is
+// exactly the case this is here to answer.
+func twitchQuality(tok twitchToken) string {
+	if tok.MaxResolution == "" {
+		return ""
+	}
+	out := "max " + twitchTierName(tok.MaxResolution)
+
+	// The lowest withheld tier is the informative one: it is the next thing
+	// that would be gained, and its reason says what is standing in the way.
+	best, bestRank := "", len(twitchTiers)+1
+	for tier := range tok.MaxResolutionReasons {
+		rank := len(twitchTiers)
+		for i, t := range twitchTiers {
+			if t.Tier == tier {
+				rank = i
+				break
+			}
+		}
+		if rank < bestRank || (rank == bestRank && tier < best) {
+			best, bestRank = tier, rank
+		}
+	}
+	if reasons := tok.MaxResolutionReasons[best]; len(reasons) > 0 {
+		out += "; " + twitchTierName(best) + ": " + reasons[0]
+	}
+	return out
 }
 
 // classifyTwitchToken turns one gql reply into a verdict. It is separate from
@@ -173,7 +232,8 @@ func classifyTwitchToken(status int, body string) (res Result, tok twitchToken, 
 		return fail(Result{State: StateBlocked, Detail: detail})
 	}
 
-	return Result{State: StateAvailable}, tok, reply.Data.Token.Value, reply.Data.Token.Signature
+	return Result{State: StateAvailable, Detail: twitchQuality(tok)},
+		tok, reply.Data.Token.Value, reply.Data.Token.Signature
 }
 
 // twitchSplitPath compares the address Twitch issued the token to against the

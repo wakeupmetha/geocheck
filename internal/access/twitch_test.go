@@ -248,3 +248,39 @@ func TestTwitchChannel(t *testing.T) {
 		}
 	}
 }
+
+func TestTwitchQuality(t *testing.T) {
+	// The shape a real token carries: a ceiling, and a reason for each tier
+	// above it. This is the trade-off side of the routing choice — the other
+	// side being whether the address is served at all.
+	got := twitchQuality(twitchToken{
+		MaxResolution: "FULL_HD",
+		MaxResolutionReasons: map[string][]string{
+			"QUAD_HD":  {"AUTHZ_NOT_LOGGED_IN"},
+			"ULTRA_HD": {"AUTHZ_NOT_LOGGED_IN"},
+		},
+	})
+	// The lowest withheld tier is the one worth naming: it is the next thing
+	// that would be gained.
+	want := "max 1080p; 1440p: AUTHZ_NOT_LOGGED_IN"
+	if got != want {
+		t.Errorf("quality = %q, want %q", got, want)
+	}
+	if len(got) > 52 {
+		t.Errorf("detail is %d chars; the report clips at 52", len(got))
+	}
+
+	// A ceiling with nothing withheld above it.
+	if got := twitchQuality(twitchToken{MaxResolution: "ULTRA_HD"}); got != "max 2160p" {
+		t.Errorf("quality = %q, want %q", got, "max 2160p")
+	}
+
+	// A tier Twitch has not used before is passed through rather than guessed
+	// at, and a token without the field says nothing at all.
+	if got := twitchQuality(twitchToken{MaxResolution: "EIGHT_K"}); got != "max EIGHT_K" {
+		t.Errorf("quality = %q, want the tier passed through", got)
+	}
+	if got := twitchQuality(twitchToken{}); got != "" {
+		t.Errorf("quality = %q, want empty", got)
+	}
+}
