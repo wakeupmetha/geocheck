@@ -167,8 +167,12 @@ func twitchQuality(tok twitchToken) string {
 			best, bestRank = tier, rank
 		}
 	}
+	// Every reason, not just the first. A tier can be withheld for more than
+	// one, and which ones they are decides whether anything can be done about
+	// it: AUTHZ_NOT_LOGGED_IN alone is fixed by signing in, AUTHZ_GEO alongside
+	// it means signing in changes nothing.
 	if reasons := tok.MaxResolutionReasons[best]; len(reasons) > 0 {
-		out += "; " + twitchTierName(best) + ": " + reasons[0]
+		out += "; " + twitchTierName(best) + ": " + strings.Join(reasons, ", ")
 	}
 	return out
 }

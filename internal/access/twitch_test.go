@@ -270,6 +270,23 @@ func TestTwitchQuality(t *testing.T) {
 		t.Errorf("detail is %d chars; the report clips at 52", len(got))
 	}
 
+	// Measured from a Russian exit: geography withholds the tier, and if the
+	// account also does, both have to show — otherwise the report implies
+	// signing in would help when it would not.
+	got = twitchQuality(twitchToken{
+		MaxResolution: "FULL_HD",
+		MaxResolutionReasons: map[string][]string{
+			"QUAD_HD": {"AUTHZ_GEO", "AUTHZ_NOT_LOGGED_IN"},
+		},
+	})
+	want = "max 1080p; 1440p: AUTHZ_GEO, AUTHZ_NOT_LOGGED_IN"
+	if got != want {
+		t.Errorf("quality = %q, want %q", got, want)
+	}
+	if len(got) > 52 {
+		t.Errorf("detail is %d chars; the report clips at 52", len(got))
+	}
+
 	// A ceiling with nothing withheld above it.
 	if got := twitchQuality(twitchToken{MaxResolution: "ULTRA_HD"}); got != "max 2160p" {
 		t.Errorf("quality = %q, want %q", got, "max 2160p")
