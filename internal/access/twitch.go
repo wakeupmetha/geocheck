@@ -342,11 +342,18 @@ func twitchAccessFor(channel, id, name string) Check {
 			}
 			// An outright refusal from the manifest host is hard evidence and
 			// outranks the configuration warning below.
-			if manifest := twitchManifest(ctx, env, channel, value, sig); manifest != nil {
+			manifest, offered := twitchManifest(ctx, env, channel, value, sig)
+			if manifest != nil {
 				return *manifest
 			}
 			if split := twitchSplitPath(tok, env.PublicIP); split != nil {
 				return *split
+			}
+			// What is actually served leads, because it is the ground truth;
+			// the ceiling behind it says whether a lower number is Twitch's
+			// doing or the channel's own.
+			if offered != "" {
+				res.Detail = strings.TrimSuffix("offered "+offered+"; "+res.Detail, "; ")
 			}
 			return res
 		},
@@ -359,7 +366,66 @@ func twitchAccessFor(channel, id, name string) Check {
 // A token is not on its own enough to reach a manifest — the channel also has
 // to be live — so anything short of an outright refusal is not evidence either
 // way, and is deliberately left unreported rather than turned into a verdict.
-func twitchManifest(ctx context.Context, env Env, channel, value, sig string) *Result {
+// reStreamInf reads a rendition off a master playlist entry. Frame rate is
+// optional: not every entry carries one.
+var (
+	reStreamRes = regexp.MustCompile(`RESOLUTION=(\d+)x(\d+)`)
+	reStreamFPS = regexp.MustCompile(`FRAME-RATE=([0-9.]+)`)
+)
+
+// twitchTopRendition names the best rendition a master playlist actually
+// offers.
+//
+// This is the number that matters, and it is not the one in the token. The
+// token carries a ceiling — permission — while the playlist carries what is
+// really being served, and the two disagree for two very different reasons:
+// Twitch capping the region, or the channel simply not broadcasting higher.
+// Without this, a 720p player next to a token saying 1080p looks like a
+// regional cap even when the streamer's own source is the limit.
+func twitchTopRendition(playlist string) string {
+	bestH, bestFPS := 0, 0.0
+	for _, line := range strings.Split(playlist, "\n") {
+		if !strings.HasPrefix(line, "#EXT-X-STREAM-INF:") {
+			continue
+		}
+		m := reStreamRes.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		h := 0
+		for _, c := range m[2] {
+			h = h*10 + int(c-'0')
+		}
+
+		fps := 0.0
+		if f := reStreamFPS.FindStringSubmatch(line); f != nil {
+			whole, frac, _ := strings.Cut(f[1], ".")
+			for _, c := range whole {
+				fps = fps*10 + float64(c-'0')
+			}
+			if frac != "" && frac[0] >= '5' {
+				fps++
+			}
+		}
+
+		if h > bestH || (h == bestH && fps > bestFPS) {
+			bestH, bestFPS = h, fps
+		}
+	}
+	if bestH == 0 {
+		return ""
+	}
+
+	out := itoa(bestH) + "p"
+	// Twitch labels only the high frame rate ladders, and so does this: 720p
+	// and 720p60 are different products, 30 and 25 are not worth the noise.
+	if bestFPS >= 50 {
+		out += itoa(int(bestFPS))
+	}
+	return out
+}
+
+func twitchManifest(ctx context.Context, env Env, channel, value, sig string) (*Result, string) {
 	q := url.Values{
 		"allow_source": {"true"},
 		"fast_bread":   {"true"},
@@ -371,12 +437,16 @@ func twitchManifest(ctx context.Context, env Env, channel, value, sig string) *R
 		UserAgent: browserUA,
 	})
 	if err != nil {
-		return nil
+		return nil, ""
 	}
-	if hasTwitchProxyMarker(resp.Text()) {
-		return &Result{State: StateBlocked, Detail: twitchProxyDetail}
+	body := resp.Text()
+	if hasTwitchProxyMarker(body) {
+		return &Result{State: StateBlocked, Detail: twitchProxyDetail}, ""
 	}
-	return nil
+	// Empty unless the channel is live: an offline channel has no playlist,
+	// which is absence of evidence rather than a cap, and is reported as
+	// nothing rather than as a number.
+	return nil, twitchTopRendition(body)
 }
 
 // twitchHost is one origin a Twitch session depends on. They are listed

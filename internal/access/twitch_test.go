@@ -301,3 +301,41 @@ func TestTwitchQuality(t *testing.T) {
 		t.Errorf("quality = %q, want empty", got)
 	}
 }
+
+func TestTwitchTopRendition(t *testing.T) {
+	// A master playlist in the shape usher returns, trimmed to the parts that
+	// are read. The 720p60 entry is the answer: highest lines first is not
+	// guaranteed, so the ladder is deliberately out of order here.
+	playlist := `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=628000,RESOLUTION=640x360,FRAME-RATE=30.000,VIDEO="360p30"
+http://example.invalid/360.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,FRAME-RATE=59.998,VIDEO="720p60"
+http://example.invalid/720.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=1500000,RESOLUTION=852x480,FRAME-RATE=30.000,VIDEO="480p30"
+http://example.invalid/480.m3u8
+`
+	if got := twitchTopRendition(playlist); got != "720p60" {
+		t.Errorf("top = %q, want %q", got, "720p60")
+	}
+
+	// Thirty frames a second is the unremarkable case and carries no suffix:
+	// 720p and 720p60 are different products, 30 and 25 are noise.
+	plain := "#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080,FRAME-RATE=30.000\nhttp://e.invalid/x\n"
+	if got := twitchTopRendition(plain); got != "1080p" {
+		t.Errorf("top = %q, want %q", got, "1080p")
+	}
+
+	// An entry without a frame rate still counts.
+	noFPS := "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100,RESOLUTION=1920x1080\nhttp://e.invalid/x\n"
+	if got := twitchTopRendition(noFPS); got != "1080p" {
+		t.Errorf("top = %q, want %q", got, "1080p")
+	}
+
+	// An offline channel has no playlist. That is absence of evidence, not a
+	// cap, and must not be reported as a number.
+	for _, in := range []string{"", `[{"error":"Can not find channel"}]`, "#EXTM3U\n"} {
+		if got := twitchTopRendition(in); got != "" {
+			t.Errorf("twitchTopRendition(%q) = %q, want empty", in, got)
+		}
+	}
+}
