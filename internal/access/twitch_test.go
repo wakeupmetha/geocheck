@@ -204,21 +204,22 @@ func TestTwitchEndpointResult(t *testing.T) {
 }
 
 func TestTwitchChannel(t *testing.T) {
-	// What people actually paste: the name, or the address bar.
-	ok := map[string]string{
-		"lagoda1337":                         "lagoda1337",
-		"LaGoda1337":                         "lagoda1337",
-		"  lagoda1337  ":                     "lagoda1337",
-		"twitch.tv/lagoda1337":               "lagoda1337",
-		"https://www.twitch.tv/lagoda1337":   "lagoda1337",
-		"https://www.twitch.tv/lagoda1337/":  "lagoda1337",
-		"https://m.twitch.tv/lagoda1337/vod": "lagoda1337",
-		"https://www.twitch.tv/lagoda1337?tt_content=x": "lagoda1337",
-	}
-	for in, want := range ok {
-		got, valid := TwitchChannel(in)
-		if !valid || got != want {
-			t.Errorf("TwitchChannel(%q) = %q, %v; want %q, true", in, got, valid, want)
+	// What people actually paste: the name, or the address bar. Pairs rather
+	// than a map so the long URL cases do not fight gofmt's key alignment.
+	for _, tc := range [][2]string{
+		{"lagoda1337", "lagoda1337"},
+		{"LaGoda1337", "lagoda1337"},
+		{"  lagoda1337  ", "lagoda1337"},
+		{"twitch.tv/lagoda1337", "lagoda1337"},
+		{"https://www.twitch.tv/lagoda1337", "lagoda1337"},
+		{"https://www.twitch.tv/lagoda1337/", "lagoda1337"},
+		{"https://m.twitch.tv/lagoda1337/videos", "lagoda1337"},
+		{"https://www.twitch.tv/lagoda1337?tt_content=x", "lagoda1337"},
+	} {
+		got, valid := TwitchChannel(tc[0])
+		if !valid || got != tc[1] {
+			t.Errorf("TwitchChannel(%q) = %q, %v; want %q, true",
+				tc[0], got, valid, tc[1])
 		}
 	}
 
