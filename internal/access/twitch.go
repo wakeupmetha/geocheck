@@ -126,8 +126,10 @@ type twitchToken struct {
 // has already allowed it, and can compare the address gql issued the token to
 // against the one the session actually exits from.
 func classifyTwitchToken(status int, body string) (res Result, tok twitchToken, value, sig string) {
+	// Refusals hand the decoded token back too: the address it names is what
+	// the verdict was actually about, and the caller reports it.
 	fail := func(r Result) (Result, twitchToken, string, string) {
-		return r, twitchToken{}, "", ""
+		return r, tok, "", ""
 	}
 
 	if hasTwitchProxyMarker(body) {
@@ -189,20 +191,47 @@ func classifyTwitchToken(status int, body string) (res Result, tok twitchToken, 
 // that produces the error is visible in the token itself, and saying so is more
 // use than waiting for the error to appear.
 func twitchSplitPath(tok twitchToken, public netip.Addr) *Result {
-	if tok.UserIP == "" || !public.IsValid() {
-		return nil
-	}
-	seen, err := netip.ParseAddr(tok.UserIP)
-	if err != nil {
-		return nil
-	}
-	if seen.Unmap() == public.Unmap() {
+	seen, ok := twitchSeenElsewhere(tok, public)
+	if !ok {
 		return nil
 	}
 	return &Result{
 		State:  StateRestricted,
-		Detail: "token issued to " + seen.String() + ", session exits " + public.String(),
+		Detail: "token issued to " + seen + ", session exits " + public.String(),
 	}
+}
+
+// twitchSeenElsewhere returns the address gql issued the token to, and whether
+// it is a different one from where the session exits.
+func twitchSeenElsewhere(tok twitchToken, public netip.Addr) (string, bool) {
+	if tok.UserIP == "" || !public.IsValid() {
+		return "", false
+	}
+	seen, err := netip.ParseAddr(tok.UserIP)
+	if err != nil {
+		return "", false
+	}
+	if seen.Unmap() == public.Unmap() {
+		return "", false
+	}
+	return seen.String(), true
+}
+
+// twitchNoteAddress names the address Twitch judged, when that is not the one
+// the session exits from.
+//
+// On a refusal this is the single most useful fact in the result. Route
+// Twitch's domains separately from everything else — which every workaround
+// for this error tells people to do — and the verdict is about an address the
+// report otherwise never shows, so "blocked" gives no way to tell which exit
+// was rejected and no way to know which one to change.
+func twitchNoteAddress(res Result, tok twitchToken, public netip.Addr) Result {
+	seen, ok := twitchSeenElsewhere(tok, public)
+	if !ok || res.Detail == "" {
+		return res
+	}
+	res.Detail += "; Twitch saw " + seen
+	return res
 }
 
 // twitchAccess probes the default channel, which answers the general question:
@@ -245,7 +274,7 @@ func twitchAccessFor(channel, id, name string) Check {
 
 			res, tok, value, sig := classifyTwitchToken(resp.Status, resp.Text())
 			if value == "" {
-				return res
+				return twitchNoteAddress(res, tok, env.PublicIP)
 			}
 			// An outright refusal from the manifest host is hard evidence and
 			// outranks the configuration warning below.
