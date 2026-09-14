@@ -255,7 +255,7 @@ func classifyTwitchToken(status int, body string) (res Result, tok twitchToken, 
 // that produces the error is visible in the token itself, and saying so is more
 // use than waiting for the error to appear.
 func twitchSplitPath(tok twitchToken, public netip.Addr) *Result {
-	seen, ok := twitchSeenElsewhere(tok, public)
+	seen, ok := seenElsewhere(tok.UserIP, public)
 	if !ok {
 		return nil
 	}
@@ -265,13 +265,13 @@ func twitchSplitPath(tok twitchToken, public netip.Addr) *Result {
 	}
 }
 
-// twitchSeenElsewhere returns the address gql issued the token to, and whether
+// seenElsewhere returns the address a service reports talking to, and whether
 // it is a different one from where the session exits.
-func twitchSeenElsewhere(tok twitchToken, public netip.Addr) (string, bool) {
-	if tok.UserIP == "" || !public.IsValid() {
+func seenElsewhere(addr string, public netip.Addr) (string, bool) {
+	if addr == "" || !public.IsValid() {
 		return "", false
 	}
-	seen, err := netip.ParseAddr(tok.UserIP)
+	seen, err := netip.ParseAddr(addr)
 	if err != nil {
 		return "", false
 	}
@@ -290,7 +290,7 @@ func twitchSeenElsewhere(tok twitchToken, public netip.Addr) (string, bool) {
 // report otherwise never shows, so "blocked" gives no way to tell which exit
 // was rejected and no way to know which one to change.
 func twitchNoteAddress(res Result, tok twitchToken, public netip.Addr) Result {
-	seen, ok := twitchSeenElsewhere(tok, public)
+	seen, ok := seenElsewhere(tok.UserIP, public)
 	if !ok || res.Detail == "" {
 		return res
 	}

@@ -29,6 +29,9 @@ func Checks(twitchChannel string) []Check {
 		notebookLM(),
 		twitchAccess(),
 		twitchEndpoints(),
+		kinopoisk(),
+		vkVideo(),
+		soundCloud(),
 	}
 	if twitchChannel != "" {
 		checks = append(checks, twitchAccessFor(
