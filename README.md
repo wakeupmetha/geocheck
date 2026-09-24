@@ -97,7 +97,7 @@ git clone https://github.com/wakeupmetha/geocheck && cd geocheck && make build
 | 🌍  | **Geolocation consensus** | Asks ~40 GeoIP APIs and consumer services which country they serve you, and shows exactly where they disagree.                                                                                               |
 | 📶  | **Connectivity checks**   | Runs the endpoints operating systems use to decide they are online – Google's `generate_204`, Apple's hotspot-detect, Microsoft's NCSI – and compares each answer against the response its vendor specifies. |
 | 🧭  | **Path analysis**         | Traces the route to the major networks, annotates every hop with its autonomous system, and judges how directly each one is reached.                                                                         |
-| 🎬  | **Service availability**  | Asks Netflix, ChatGPT, Gemini, NotebookLM, YouTube Premium, Claude, TikTok, Twitch, Kinopoisk, VK Video and SoundCloud whether they will actually serve you, and sweeps Twitch's subdomains for the ones a filter picks off one at a time.                                                                                |
+| 🎬  | **Service availability**  | Asks Netflix, ChatGPT, Gemini, NotebookLM, YouTube Premium, Claude, TikTok, Twitch, Kinopoisk, VK Video, SoundCloud and kino.watch whether they will actually serve you, and sweeps Twitch's and kinopub's hosts for the ones a filter picks off one at a time. |
 
 It also checks whether the measurement itself is being tampered with – a tunnel
 carrying your default route, a resolver answering on someone else's behalf –
@@ -254,6 +254,8 @@ geocheck [options]
       --proxycheck-key K  proxycheck.io API key ($PROXYCHECK_API_KEY)
       --twitch-channel C  also test one Twitch channel's playback, by name or
                           URL ($GEOCHECK_TWITCH_CHANNEL)
+      --kinopub-token T   kinopub access token, to also test the kino.watch
+                          player ($GEOCHECK_KINOPUB_TOKEN)
       --mask              mask the public address in the output
   -j, --json              emit JSON
       --svg FILE          write the report as a self-contained SVG (- for stdout)

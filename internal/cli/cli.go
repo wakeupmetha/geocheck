@@ -46,6 +46,7 @@ type options struct {
 	noRep    bool
 	repKey   string
 	twitchCh string
+	kpToken  string
 	portals  string
 	targets  string
 	detail   bool
@@ -136,6 +137,7 @@ func parse(args []string) (*options, error) {
 	bind(&o.noRep, false, "skip the proxycheck.io address reputation lookup", "no-reputation")
 	bindStr(&o.repKey, os.Getenv("PROXYCHECK_API_KEY"), "proxycheck.io API key (raises the daily allowance to 1000)", "proxycheck-key")
 	bindStr(&o.twitchCh, os.Getenv("GEOCHECK_TWITCH_CHANNEL"), "also test one Twitch channel's playback: a name or a channel URL", "twitch-channel")
+	bindStr(&o.kpToken, os.Getenv("GEOCHECK_KINOPUB_TOKEN"), "kinopub access token, to also test the kino.watch player", "kinopub-token")
 	bindStr(&o.portals, "default", "connectivity-check set: a tag, an id, or 'all'", "portal")
 	bindStr(&o.targets, "default", "MTR target set: a tag, an id, 'all', or a comma-separated list", "T", "targets")
 	bind(&o.detail, false, "print the full per-hop table for every target", "d", "detail")
@@ -214,6 +216,9 @@ Options:
                           URL ($GEOCHECK_TWITCH_CHANNEL). Premium refusals
                           depend on what a channel carries, so the fixed
                           checks can pass while a given channel is refused
+      --kinopub-token T   kinopub access token, to also test the kino.watch
+                          player ($GEOCHECK_KINOPUB_TOKEN). Streams are only
+                          issued to an account
       --no-rdns           skip reverse DNS for hops
       --mask              mask the public address in the output
   -j, --json              emit JSON
@@ -401,7 +406,7 @@ func run(ctx context.Context, o *options) error {
 		go func() {
 			defer wg.Done()
 			accesses = access.Run(ctx, stack, families[0],
-				env.PublicIP(families[0]), access.Checks(o.twitchCh), 6)
+				env.PublicIP(families[0]), access.Checks(o.twitchCh, o.kpToken), 6)
 		}()
 	}
 

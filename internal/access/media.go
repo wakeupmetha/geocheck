@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/remnawave/geocheck/internal/jsonx"
 	"github.com/remnawave/geocheck/internal/netx"
@@ -334,6 +335,240 @@ func soundCloud() Check {
 				}
 			}
 			return Result{State: StateAvailable, Region: region}
+		},
+	}
+}
+
+// kino.watch is kinopub's current address. Unlike the services above it has no
+// regional licence to enforce: it is blocked from inside Russia by the network,
+// not refused by the service, and blocked one host at a time. The site, the API
+// its apps talk to and the CDN the player streams from fail independently, so
+// each is its own check.
+
+// classifyKinoWatch judges the front page. Anonymous visitors are sent to the
+// login form, so reaching the form is the evidence the site was reached; any
+// other page in its place is most likely a block page served on its behalf.
+func classifyKinoWatch(status int, body string) Result {
+	if isChallenge(status, strings.ToLower(body)) {
+		return Result{
+			State:  StateError,
+			Detail: "Cloudflare challenged the request, so availability was never tested",
+		}
+	}
+	if strings.Contains(body, `id="login-form"`) {
+		return Result{State: StateAvailable}
+	}
+	if status >= 200 && status < 400 {
+		return Result{
+			State:  StateError,
+			Detail: "HTTP " + itoa(status) + " without the login form; a block page in its place?",
+		}
+	}
+	return Result{State: StateError, Detail: "unexpected HTTP " + itoa(status)}
+}
+
+func kinoWatch() Check {
+	return Check{
+		ID: "kinowatch_access", Name: "kino.watch",
+		Run: func(ctx context.Context, env Env) Result {
+			resp, err := env.Stack.Do(ctx, env.Family, netx.Request{
+				URL:       "https://kino.watch/",
+				UserAgent: browserUA,
+			})
+			if err != nil {
+				return Result{State: StateError, Detail: "request failed", Err: err}
+			}
+			return classifyKinoWatch(resp.Status, resp.Text())
+		},
+	}
+}
+
+// kinoWatchHost is one origin of kinopub's technical zone, with the status its
+// own nginx gives an anonymous request. Matching that status, rather than
+// accepting any answer, is what tells the real server from a block page.
+type kinoWatchHost struct {
+	URL  string
+	Want int
+}
+
+// kinoWatchTech is the API the apps use, the mirrors they fall back to when it
+// is blocked, and the media and static hosts behind the site.
+var kinoWatchTech = []kinoWatchHost{
+	{"https://api.service-kp.com/v1/user", 401},
+	{"https://api.srvkp.com/v1/user", 401},
+	{"https://api.alador.space/v1/user", 401},
+	{"https://cdn-service.space/api/v1/user", 401},
+	{"https://cdn-service.online/api/v1/user", 401},
+	{"https://media.service-kp.com/", 204},
+	{"https://m.staticpop.net/", 204},
+}
+
+// kinoWatchTechResult reads the sweep. why holds, per host, "" when it answered
+// as itself and otherwise what came back instead.
+func kinoWatchTechResult(hosts []kinoWatchHost, why []string) Result {
+	failed := make([]string, 0, len(hosts))
+	for i, h := range hosts {
+		if why[i] == "" {
+			continue
+		}
+		u, _ := url.Parse(h.URL)
+		failed = append(failed, u.Host+" ("+why[i]+")")
+	}
+	switch len(failed) {
+	case 0:
+		return Result{
+			State:  StateAvailable,
+			Detail: itoa(len(hosts)) + "/" + itoa(len(hosts)) + " hosts reachable",
+		}
+	case len(hosts):
+		return Result{State: StateBlocked, Detail: "no kinopub host answered"}
+	}
+	return Result{
+		State:  StateRestricted,
+		Detail: itoa(len(failed)) + " unreachable: " + strings.Join(failed, ", "),
+	}
+}
+
+func kinoWatchTechZone() Check {
+	return Check{
+		ID: "kinowatch_tech", Name: "kino.watch tech zone",
+		Run: func(ctx context.Context, env Env) Result {
+			why := make([]string, len(kinoWatchTech))
+			var wg sync.WaitGroup
+			for i, h := range kinoWatchTech {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					resp, err := env.Stack.Do(ctx, env.Family, netx.Request{
+						URL:       h.URL,
+						UserAgent: browserUA,
+					})
+					switch {
+					case err != nil:
+						why[i] = "no answer"
+					case resp.Status != h.Want:
+						why[i] = "HTTP " + itoa(resp.Status)
+					}
+				}()
+			}
+			wg.Wait()
+			return kinoWatchTechResult(kinoWatchTech, why)
+		},
+	}
+}
+
+const kinoWatchAPI = "https://api.service-kp.com/v1/"
+
+// kinoWatchAPIError says why the API refused a request, or "" if it did not.
+func kinoWatchAPIError(status int) string {
+	switch {
+	case status == 401:
+		return "the API rejected the token; it may have expired"
+	case status < 200 || status >= 300:
+		return "unexpected HTTP " + itoa(status) + " from the API"
+	}
+	return ""
+}
+
+// kinoWatchManifest picks the stream the player would open out of an item
+// reply. hls4 is what the site's own player plays; the older ladders stand in
+// where a file lacks it.
+func kinoWatchManifest(status int, body []byte) (string, Result) {
+	if msg := kinoWatchAPIError(status); msg != "" {
+		return "", Result{State: StateError, Detail: msg}
+	}
+	var reply struct {
+		Item struct {
+			Videos []struct {
+				Files []struct {
+					URL struct {
+						HLS  string `json:"hls"`
+						HLS2 string `json:"hls2"`
+						HLS4 string `json:"hls4"`
+					} `json:"url"`
+				} `json:"files"`
+			} `json:"videos"`
+		} `json:"item"`
+	}
+	if err := json.Unmarshal(body, &reply); err != nil {
+		return "", Result{State: StateError, Detail: "unreadable item response", Err: err}
+	}
+	for _, v := range reply.Item.Videos {
+		for _, f := range v.Files {
+			for _, u := range []string{f.URL.HLS4, f.URL.HLS2, f.URL.HLS} {
+				if u != "" {
+					return u, Result{}
+				}
+			}
+		}
+	}
+	return "", Result{State: StateError, Detail: "the item carried no stream"}
+}
+
+// classifyKinoWatchStream judges what the CDN did with the stream the API
+// issued. The API answering proves nothing about playback: the CDN is a
+// separate set of hosts, and the one that is blocked while the site and API
+// load fine. The URL carries the CDN location kinopub chose, as loc=.
+func classifyKinoWatchStream(stream string, status int, playlist string, err error) Result {
+	u, _ := url.Parse(stream)
+	res := Result{Region: strings.ToUpper(u.Query().Get("loc"))}
+	switch {
+	case err != nil:
+		res.State, res.Detail, res.Err = StateBlocked, "the API issued a stream, but "+u.Host+" did not answer", err
+	case status < 200 || status >= 300:
+		res.State, res.Detail = StateError, "HTTP "+itoa(status)+" from "+u.Host
+	case !strings.HasPrefix(playlist, "#EXTM3U"):
+		res.State, res.Detail = StateError, u.Host+" answered with something other than a playlist"
+	default:
+		res.State, res.Detail = StateAvailable, "served by "+u.Host
+		if top := twitchTopRendition(playlist); top != "" {
+			res.Detail = top + " from " + u.Host
+		}
+	}
+	return res
+}
+
+// kinoWatchPlayer follows the path a signed-in app takes to play something —
+// a title off the popular list, its stream, the playlist from the CDN — and
+// needs the account's token because none of it is served anonymously.
+func kinoWatchPlayer(token string) Check {
+	return Check{
+		ID: "kinowatch_player", Name: "kino.watch player",
+		Run: func(ctx context.Context, env Env) Result {
+			api := func(path string) (*netx.Response, error) {
+				return env.Stack.Do(ctx, env.Family, netx.Request{
+					URL:       kinoWatchAPI + path,
+					UserAgent: browserUA,
+					Headers:   map[string]string{"Authorization": "Bearer " + token},
+				})
+			}
+			resp, err := api("items/popular?type=movie&perpage=1")
+			if err != nil {
+				return Result{State: StateError, Detail: "request failed", Err: err}
+			}
+			if msg := kinoWatchAPIError(resp.Status); msg != "" {
+				return Result{State: StateError, Detail: msg}
+			}
+			id := jsonx.String(resp.Body, "items.0.id")
+			if id == "" {
+				return Result{State: StateError, Detail: "the popular list was empty"}
+			}
+
+			resp, err = api("items/" + id)
+			if err != nil {
+				return Result{State: StateError, Detail: "request failed", Err: err}
+			}
+			stream, res := kinoWatchManifest(resp.Status, resp.Body)
+			if stream == "" {
+				return res
+			}
+
+			resp, err = env.Stack.Do(ctx, env.Family, netx.Request{URL: stream, UserAgent: browserUA})
+			status := 0
+			if resp != nil {
+				status = resp.Status
+			}
+			return classifyKinoWatchStream(stream, status, resp.Text(), err)
 		},
 	}
 }

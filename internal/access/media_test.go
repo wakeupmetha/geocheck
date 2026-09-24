@@ -1,6 +1,7 @@
 package access
 
 import (
+	"errors"
 	"net/netip"
 	"strings"
 	"testing"
@@ -161,5 +162,90 @@ func TestSoundCloudScraping(t *testing.T) {
 		`client_id:"0123456789abcdefABCDEF0123456789",client_is_expiring:!1`
 	if m := reSoundCloudClient.FindStringSubmatch(bundle); m == nil || m[1] != "0123456789abcdefABCDEF0123456789" {
 		t.Errorf("client_id = %v", m)
+	}
+}
+
+func TestClassifyKinoWatch(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   State
+	}{
+		{"login form", 200, `<form id="login-form" action="/user/login" method="post">`, StateAvailable},
+		// A network's block page answers 200 too; only kinopub's own form
+		// counts as reaching the site.
+		{"page in its place", 200, `<html><body>Доступ ограничен</body></html>`, StateError},
+		{"server error", 502, "Bad Gateway", StateError},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := classifyKinoWatch(c.status, c.body); got.State != c.want {
+				t.Errorf("state = %v, want %v (detail %q)", got.State, c.want, got.Detail)
+			}
+		})
+	}
+}
+
+func TestKinoWatchTechResult(t *testing.T) {
+	hosts := []kinoWatchHost{
+		{"https://api.service-kp.com/v1/user", 401},
+		{"https://media.service-kp.com/", 204},
+	}
+	if got := kinoWatchTechResult(hosts, []string{"", ""}); got.State != StateAvailable {
+		t.Errorf("all up: state = %v", got.State)
+	}
+	one := kinoWatchTechResult(hosts, []string{"HTTP 200", ""})
+	if one.State != StateRestricted || one.Detail != "1 unreachable: api.service-kp.com (HTTP 200)" {
+		t.Errorf("one down: %v %q", one.State, one.Detail)
+	}
+	if got := kinoWatchTechResult(hosts, []string{"no answer", "no answer"}); got.State != StateBlocked {
+		t.Errorf("all down: state = %v", got.State)
+	}
+}
+
+func TestKinoWatchManifest(t *testing.T) {
+	item := `{"status":200,"item":{"id":1,"videos":[{"id":7,"files":[` +
+		`{"quality":"1080p","url":{"http":"https://cdn.example/1.mp4","hls":"https://cdn.example/hls/1.m3u8",` +
+		`"hls4":"https://cdn.example/hls4/1.m3u8?loc=nl"}}]}]}}`
+	if got, _ := kinoWatchManifest(200, []byte(item)); got != "https://cdn.example/hls4/1.m3u8?loc=nl" {
+		t.Errorf("stream = %q, want the hls4 one", got)
+	}
+	cases := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		// An expired token says nothing about the network.
+		{"expired token", 401, `{"status":401,"error":"unauthorized"}`},
+		{"no files", 200, `{"status":200,"item":{"id":1,"videos":[{"id":7,"files":[]}]}}`},
+		{"not json", 200, "<html>"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stream, got := kinoWatchManifest(c.status, []byte(c.body))
+			if stream != "" || got.State != StateError {
+				t.Errorf("stream %q, state %v, want an error", stream, got.State)
+			}
+		})
+	}
+}
+
+func TestClassifyKinoWatchStream(t *testing.T) {
+	stream := "https://cdn.example/hls4/1.m3u8?loc=nl"
+	master := "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=1280x720\n720.m3u8\n" +
+		"#EXT-X-STREAM-INF:BANDWIDTH=2,RESOLUTION=1920x1080\n1080.m3u8\n"
+
+	got := classifyKinoWatchStream(stream, 200, master, nil)
+	if got.State != StateAvailable || got.Region != "NL" || got.Detail != "1080p from cdn.example" {
+		t.Errorf("served: %v %q %q", got.State, got.Region, got.Detail)
+	}
+	// The API handing out a stream the CDN then refuses to connect for is
+	// the case this check exists for: site and API up, playback dead.
+	if got := classifyKinoWatchStream(stream, 0, "", errors.New("reset")); got.State != StateBlocked {
+		t.Errorf("no answer: state = %v", got.State)
+	}
+	if got := classifyKinoWatchStream(stream, 200, "<html>stub</html>", nil); got.State != StateError {
+		t.Errorf("not a playlist: state = %v", got.State)
 	}
 }

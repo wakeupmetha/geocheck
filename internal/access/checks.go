@@ -17,7 +17,10 @@ const browserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 
 // twitchChannel is optional. When set, one more probe is appended for that
 // channel: the premium refusal depends on what a channel carries, so the
 // fixed set can pass while the channel someone actually wants is refused.
-func Checks(twitchChannel string) []Check {
+//
+// kinopubToken is optional too. When set, the kino.watch player is tested as
+// well; nothing on that path is served without an account.
+func Checks(twitchChannel, kinopubToken string) []Check {
 	checks := []Check{
 		chatGPTWeb(),
 		chatGPTApp(),
@@ -32,10 +35,15 @@ func Checks(twitchChannel string) []Check {
 		kinopoisk(),
 		vkVideo(),
 		soundCloud(),
+		kinoWatch(),
+		kinoWatchTechZone(),
 	}
 	if twitchChannel != "" {
 		checks = append(checks, twitchAccessFor(
 			twitchChannel, "twitch_channel_access", "Twitch: "+twitchChannel))
+	}
+	if kinopubToken != "" {
+		checks = append(checks, kinoWatchPlayer(kinopubToken))
 	}
 	return checks
 }

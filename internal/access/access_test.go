@@ -122,10 +122,10 @@ func TestSummarize(t *testing.T) {
 }
 
 func TestChecksAreWellFormed(t *testing.T) {
-	// The extra channel is included so its id and name are checked for
-	// collisions with the fixed set too.
+	// The optional probes are included so their ids and names are checked
+	// for collisions with the fixed set too.
 	seen := map[string]bool{}
-	for _, c := range Checks("lagoda1337") {
+	for _, c := range Checks("lagoda1337", "token") {
 		if c.ID == "" || c.Name == "" || c.Run == nil {
 			t.Errorf("check %+v is incomplete", c)
 		}
@@ -134,12 +134,13 @@ func TestChecksAreWellFormed(t *testing.T) {
 		}
 		seen[c.ID] = true
 	}
-	if len(Checks("")) < 5 {
-		t.Errorf("got %d checks, want at least 5", len(Checks("")))
+	if len(Checks("", "")) < 5 {
+		t.Errorf("got %d checks, want at least 5", len(Checks("", "")))
 	}
-	// Naming a channel adds a probe; not naming one adds nothing.
-	if extra := len(Checks("lagoda1337")) - len(Checks("")); extra != 1 {
-		t.Errorf("a named channel added %d checks, want 1", extra)
+	// Naming a channel or giving a token adds a probe each; omitting them
+	// adds nothing.
+	if extra := len(Checks("lagoda1337", "token")) - len(Checks("", "")); extra != 2 {
+		t.Errorf("a named channel and a token added %d checks, want 2", extra)
 	}
 }
 

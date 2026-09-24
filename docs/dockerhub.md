@@ -75,8 +75,8 @@ Pre-releases are published under their exact version and never move `ing`.
   its autonomous system, and a verdict on how directly each is reached:
   `direct / on-net`, `regional`, `transit`, `detour` or `intercepted`.
 - **Service availability** – whether Netflix, ChatGPT, Gemini, NotebookLM, Twitch,
-  YouTube Premium, Claude, TikTok, Kinopoisk, VK Video and SoundCloud will
-  actually serve you.
+  YouTube Premium, Claude, TikTok, Kinopoisk, VK Video, SoundCloud and
+  kino.watch will actually serve you.
 
 It also reports when the measurement itself is being tampered with – a tunnel
 carrying your default route, a resolver answering on someone else's behalf –

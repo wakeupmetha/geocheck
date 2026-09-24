@@ -141,8 +141,8 @@ func demoPortal() []portal.Result {
 }
 
 func demoAccess() []access.Result {
-	// No named channel: the demo renders the fixed set.
-	checks := access.Checks("")
+	// No named channel or token: the demo renders the fixed set.
+	checks := access.Checks("", "")
 	out := make([]access.Result, 0, len(checks))
 	for i, c := range checks {
 		res := access.Result{
